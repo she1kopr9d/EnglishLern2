@@ -1,0 +1,32 @@
+services:
+  bot:
+    build: ./bot
+    container_name: bot_tg
+    env_file:
+      - .env
+    volumes:
+      - ./bot/words.db:/app/words.db
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - shared_network
+  free_translate_api:
+    build: ./free_translate_api
+    container_name: translate
+    command: python manage.py runserver 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./free_translate_api/db.sqlite3:/app/db.sqlite3
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - shared_network
+
+networks:
+  shared_network:
+    driver: bridge
