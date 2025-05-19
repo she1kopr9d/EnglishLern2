@@ -17,7 +17,18 @@ def init_db():
     conn.commit()
     conn.close()
 
+def word_exists(user_id, word):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''SELECT 1 FROM words WHERE user_id=? AND word=?''', (user_id, word))
+    exists = c.fetchone() is not None
+    conn.close()
+    return exists
+
 def add_word(user_id, word, translation):
+    if word_exists(user_id, word):
+        return False
+        
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     now = datetime.now()
@@ -26,6 +37,7 @@ def add_word(user_id, word, translation):
               (user_id, word, translation, now + timedelta(minutes=1), 1))
     conn.commit()
     conn.close()
+    return True
 
 def get_due_words():
     conn = sqlite3.connect(DB_PATH)
@@ -56,5 +68,13 @@ def update_word_interval(user_id, word, new_interval):
               (next_time, new_interval, user_id, word))
     conn.commit()
     conn.close()
+
+def delete_word(user_id, word):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''DELETE FROM words WHERE user_id=? AND word=?''', (user_id, word))
+    conn.commit()
+    conn.close()
+    return True
 
 init_db()

@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from dotenv import load_dotenv
-from db import add_word, get_due_words, update_word_interval, get_word_info
+from db import add_word, get_due_words, update_word_interval, get_word_info, word_exists, delete_word
 from utils import translate_word, get_next_reminder_time
 
 dp = Dispatcher()
@@ -19,13 +19,43 @@ async def cmd_start(message: Message):
 async def handle_message(message: Message):
     user_id = message.from_user.id
     text = message.text.strip()
-    words = text.split()
-    translations = []
-    for word in words:
-        ru = translate_word(word)
-        add_word(user_id, word, ru)
-        translations.append(f'{word} — {ru}')
-    await message.answer('\n'.join(translations) + '\nЯ запомнил эти слова для тебя!')
+    
+    # Проверяем, заканчивается ли текст на ~
+    if text.endswith('~'):
+        # Убираем ~ и разбиваем на слова
+        text = text[:-1].strip()
+        # Убираем знаки препинания и разбиваем на слова
+        words = [word.strip('.,!?;:()[]{}"\'') for word in text.split()]
+        translations = []
+        skipped_words = []
+        
+        for word in words:
+            if word_exists(user_id, word):
+                skipped_words.append(word)
+                continue
+                
+            ru = translate_word(word)
+            if add_word(user_id, word, ru):
+                translations.append(f'{word} — {ru}')
+        
+        response = []
+        if translations:
+            response.append('\n'.join(translations))
+            response.append('Я запомнил эти новые слова для тебя!')
+        if skipped_words:
+            response.append(f'Слова {", ".join(skipped_words)} уже есть в твоем словаре.')
+            
+        await message.answer('\n'.join(response))
+    else:
+        # Проверяем существование фразы
+        if word_exists(user_id, text):
+            await message.answer(f'Фраза "{text}" уже есть в твоем словаре.')
+            return
+            
+        # Обрабатываем как единую фразу
+        ru = translate_word(text)
+        if add_word(user_id, text, ru):
+            await message.answer(f'{text} — {ru}\nЯ запомнил эту фразу для тебя!')
 
 # Клавиатура для повторения
 def get_reminder_keyboard(word):
@@ -36,7 +66,8 @@ def get_reminder_keyboard(word):
             InlineKeyboardButton(text="Не помню", callback_data=f"rem_bad|{word}")
         ],
         [
-            InlineKeyboardButton(text="Показать перевод", callback_data=f"show|{word}")
+            InlineKeyboardButton(text="Показать перевод", callback_data=f"show|{word}"),
+            InlineKeyboardButton(text="❌ Удалить", callback_data=f"delete|{word}")
         ]
     ])
 
@@ -69,6 +100,24 @@ async def handle_reminder_feedback(callback: CallbackQuery):
     
     # Удаляем сообщение с карточкой
     await callback.message.delete()
+    
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("delete|"))
+async def delete_word_handler(callback: CallbackQuery):
+    word = callback.data.split("|", 1)[1]
+    user_id = callback.from_user.id
+    
+    # Удаляем слово из базы
+    delete_word(user_id, word)
+    
+    # Удаляем сообщение с карточкой
+    await callback.message.delete()
+    
+    # Отправляем подтверждение удаления
+    msg = await callback.message.answer(f'Слово "{word}" удалено из твоего словаря.')
+    await asyncio.sleep(3)
+    await msg.delete()
     
     await callback.answer()
 
